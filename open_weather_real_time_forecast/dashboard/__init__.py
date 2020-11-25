@@ -1,40 +1,42 @@
+import os
+
 import dash
+import plotly.express as px
 import dash_core_components as dcc
 import dash_html_components as html
-import plotly.express as px
+
 import pandas as pd
+
+from open_weather_real_time_forecast.database import db, Report
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
+BASE_DIR = f"{os.path.abspath(os.getcwd())}/open_weather_real_time_forecast"
+
 def create_dashboard(server):
-    """Create a Plotly Dash dashboard."""
     dash_app = dash.Dash(
         server=server,
         routes_pathname_prefix='/dashboard/',
         external_stylesheets=external_stylesheets
     )
 
-    # assume you have a "long-form" data frame
-    # see https://plotly.com/python/px-arguments/ for more options
-    df = pd.DataFrame({
-        "Fruit": ["Apples", "Oranges", "Bananas", "Apples", "Oranges", "Bananas"],
-        "Amount": [4, 1, 2, 2, 4, 5],
-        "City": ["SF", "SF", "SF", "Montreal", "Montreal", "Montreal"]
-    })
+    last_report = db.session.query(Report).filter(Report.active == True).order_by(Report.id.desc()).first()
 
-    fig = px.bar(df, x="Fruit", y="Amount", color="City", barmode="group")
+    children = [
+        html.H1(children='Open weather real-time forecast'),
+    ]
 
-    dash_app.layout = html.Div(children=[
-        html.H1(children='Hello Dash'),
+    if last_report is not None:
+        df = pd.read_csv(last_report.path)
 
-        html.Div(children='''
-            Dash: A web application framework for Python.
-        '''),
+        fig = px.histogram(df.loc[df['variable']=='press'], x="value")
 
-        dcc.Graph(
+        children.append(html.H1(children='Open weather real-time forecast'))
+        children.append(dcc.Graph(
             id='example-graph',
             figure=fig
-        )
-    ])
+        ))
+
+    dash_app.layout = html.Div(children=children)
 
     return dash_app.server

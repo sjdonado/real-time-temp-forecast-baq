@@ -1,9 +1,10 @@
 import os
 import re
 import shutil
-import datetime
+
+import portolan
 import multiprocessing
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from calendar import monthrange
 
 from urllib.request import urlopen
@@ -15,9 +16,9 @@ from threading import Thread
 
 from metar import Metar
 
-import portolan
+from open_weather_real_time_forecast.database import db, Report
 
-BASE_DIR = os.path.abspath(os.getcwd())
+BASE_DIR = f"{os.path.abspath(os.getcwd())}/open_weather_real_time_forecast"
 
 # Fetch Observations
 
@@ -66,7 +67,7 @@ def gms_to_lat_lng(gms):
         return 0
 
 def get_last_metar(station):
-    now = datetime.datetime.utcnow()
+    now = datetime.utcnow()
     soup = fetch(f"https://www.ogimet.com/display_metars2.php?lugar={station['ICAO']}&tipo=SA&ord=DIR&nil=NO&fmt=text&ano={now.year}&mes={now.month}&day={now.day}&hora={now.hour}")
     if soup is None:
         return []
@@ -201,55 +202,14 @@ def calculate_rhum(dew_point, temp):
 def fetch_last_metars(station):
     localdata = []
     metar_obs = get_last_metar(station)
-    print(metar_obs)
     for obs_item in metar_obs:
-        hour = datetime.datetime.strptime(obs_item['datetime'], '%Y%m%d%H%M').hour
+        hour = datetime.strptime(obs_item['datetime'], '%Y%m%d%H%M').hour
         localdata.append([obs_item['lat'], obs_item['lng'], obs_item['elev'], obs_item['datetime'], obs_item['observation']])
     return localdata
 
 
-def parse_metars(idx):
-    dt = []
-    cords = []
-    row = df.iloc[idx]
-    try:
-        temp = 0.0
-        obs = Metar.Metar(row['observation']).string()
-        if ('temperature' in obs):
-            temp = get_temperature(obs)
-            if temp < 331.15:
-                dt.append([row['datetime'].strftime("%Y-%m-%d %H:%M:%S"), row['lat'], row['lng'], row['elev'], 'air', temp])
-
-        (u, v) = get_wind_comps(obs)
-        if (u, v) != (0,0):
-            dt.append([row['datetime'].strftime("%Y-%m-%d %H:%M:%S"), row['lat'], row['lng'], row['elev'], 'uwnd', u])
-            dt.append([row['datetime'].strftime("%Y-%m-%d %H:%M:%S"), row['lat'], row['lng'], row['elev'], 'vwnd', v])
-
-        if ('pressure' in obs):
-            press = get_pressure(obs)
-            if press < 105100 and press > 52200:
-                dt.append([row['datetime'].strftime("%Y-%m-%d %H:%M:%S"), row['lat'], row['lng'], row['elev'], 'press', press])
-
-        if ('dew point' in obs and 'pressure' in obs):
-            dew_point = get_dew_point(obs)
-            if dew_point > 0 and press < 105100 and press > 52200 and dew_point <= temp and temp != 0 :
-                shum = calculate_shum(dew_point, press)
-                rhum = calculate_rhum(dew_point, temp)
-                dt.append([row['datetime'].strftime("%Y-%m-%d %H:%M:%S"), row['lat'], row['lng'], row['elev'], 'rhum', rhum])
-                if shum < 0.05:
-                    dt.append([row['datetime'].strftime("%Y-%m-%d %H:%M:%S"), row['lat'], row['lng'], row['elev'], 'shum', shum])
-
-        cords.append((row['lat'], row['lng']))
-    except Exception as e:
-        str_err = str(e)
-        if 'Unparsed groups' not in str_err and '_handleTime' not in str_err and '_handleWind' not in str_err and "NSW" not in str_err:
-            print('index:', idx, 'error:', e)
-    return (dt, cords)
-
-task_in_process = False
-
 def job():
-    global task_in_process
+    global parse_metars
 
     noaa_stations = get_stations_with_coords()
     print('[job]: noaa stations fetched')
@@ -265,6 +225,49 @@ def job():
             df.append(arr)
 
     print('[job]: last metars fetched')
+
+    df = pd.DataFrame(data=df, columns=['lat', 'lng', 'elev', 'datetime', 'observation'])
+
+    df['datetime'] = pd.to_datetime(df.datetime)
+    df = df.sort_values(by='datetime')  
+
+    def parse_metars(idx):
+        dt = []
+        cords = []
+        row = df.iloc[idx]
+        try:
+            temp = 0.0
+            obs = Metar.Metar(row['observation']).string()
+            if ('temperature' in obs):
+                temp = get_temperature(obs)
+                if temp < 331.15:
+                    dt.append([row['datetime'].strftime("%Y-%m-%d %H:%M:%S"), row['lat'], row['lng'], row['elev'], 'air', temp])
+
+            (u, v) = get_wind_comps(obs)
+            if (u, v) != (0,0):
+                dt.append([row['datetime'].strftime("%Y-%m-%d %H:%M:%S"), row['lat'], row['lng'], row['elev'], 'uwnd', u])
+                dt.append([row['datetime'].strftime("%Y-%m-%d %H:%M:%S"), row['lat'], row['lng'], row['elev'], 'vwnd', v])
+
+            if ('pressure' in obs):
+                press = get_pressure(obs)
+                if press < 105100 and press > 52200:
+                    dt.append([row['datetime'].strftime("%Y-%m-%d %H:%M:%S"), row['lat'], row['lng'], row['elev'], 'press', press])
+
+            if ('dew point' in obs and 'pressure' in obs):
+                dew_point = get_dew_point(obs)
+                if dew_point > 0 and press < 105100 and press > 52200 and dew_point <= temp and temp != 0 :
+                    shum = calculate_shum(dew_point, press)
+                    rhum = calculate_rhum(dew_point, temp)
+                    dt.append([row['datetime'].strftime("%Y-%m-%d %H:%M:%S"), row['lat'], row['lng'], row['elev'], 'rhum', rhum])
+                    if shum < 0.05:
+                        dt.append([row['datetime'].strftime("%Y-%m-%d %H:%M:%S"), row['lat'], row['lng'], row['elev'], 'shum', shum])
+
+            cords.append((row['lat'], row['lng']))
+        except Exception as e:
+            str_err = str(e)
+            if 'Unparsed groups' not in str_err and '_handleTime' not in str_err and '_handleWind' not in str_err and "NSW" not in str_err:
+                print('index:', idx, 'error:', e)
+        return (dt, cords)
 
     # Parse metars
     jobs = multiprocessing.cpu_count()
@@ -283,18 +286,24 @@ def job():
 
     df_metar_info = pd.DataFrame(df_parsed_metars,columns=['datetime','lat','lng','elev','variable','value'])
 
-    df_metar_info.to_csv(f"{BASE_DIR}/../data/last.csv", index=False)
+    report = db.session.query(Report).filter(Report.active == True)
+    df_metar_info.to_csv(report[0].path, index=False)
 
+    report.update({"active": False})
     print('[job]: data saved')
 
-    task_in_process = False
 
 def run():
-    global task_in_process
-    status = task_in_process
-    if not task_in_process:
-        task_in_process = True
-        Thread(target=job, daemon=True).start()
+    active_reports = db.session.query(Report).filter(Report.active == True).count()
+    if active_reports > 0:
+        return True
 
-    return status
+    report = Report()
+    report.path = f"{BASE_DIR}/blob/{datetime.utcnow().strftime('%Y%m%d%H')}.csv"
+    db.session.add(report)
+    db.session.commit()
+
+    Thread(target=job, daemon=True).start()
+
+    return False
     

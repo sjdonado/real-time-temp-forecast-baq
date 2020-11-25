@@ -1,4 +1,5 @@
 import os
+
 from open_weather_real_time_forecast import create_app
 
 PORT = int(os.environ.get("PORT", 5000))
