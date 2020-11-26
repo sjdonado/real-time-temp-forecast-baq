@@ -20,7 +20,9 @@ def create_dashboard(server):
         external_stylesheets=external_stylesheets
     )
 
-    last_report = db.session.query(Report).filter(Report.active == True).order_by(Report.id.desc()).first()
+    print('test',  db.session.query(Report).filter(Report.active == False).count())
+
+    last_report = db.session.query(Report).filter(Report.active == False).order_by(Report.id.desc()).first()
 
     children = [
         html.H1(children='Open weather real-time forecast'),
@@ -31,7 +33,7 @@ def create_dashboard(server):
 
         fig = px.histogram(df.loc[df['variable']=='press'], x="value")
 
-        children.append(html.H1(children='Open weather real-time forecast'))
+        children.append(html.P(children=f"Last report: {last_report.created}"))
         children.append(dcc.Graph(
             id='example-graph',
             figure=fig
