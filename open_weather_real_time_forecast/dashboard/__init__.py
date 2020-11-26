@@ -20,8 +20,6 @@ def create_dashboard(server):
         external_stylesheets=external_stylesheets
     )
 
-    print('test',  db.session.query(Report).filter(Report.active == False).count())
-
     last_report = db.session.query(Report).filter(Report.active == False).order_by(Report.id.desc()).first()
 
     children = [
