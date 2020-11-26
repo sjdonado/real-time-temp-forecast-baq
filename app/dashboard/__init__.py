@@ -7,7 +7,7 @@ import dash_html_components as html
 
 import pandas as pd
 
-from open_weather_real_time_forecast.database import db, Report
+from app.database import db, Report
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 

@@ -16,7 +16,7 @@ from threading import Thread
 
 from metar import Metar
 
-from open_weather_real_time_forecast.database import db, Report
+from app.database import db, Report
 
 BASE_DIR = f"{os.path.abspath(os.getcwd())}/open_weather_real_time_forecast"
 

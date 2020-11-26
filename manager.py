@@ -1,8 +1,8 @@
 from flask_script import Manager
 from flask_migrate import MigrateCommand
 
-from open_weather_real_time_forecast import create_app
-from open_weather_real_time_forecast.constants import MIGRATION_ENV
+from app import create_app
+from app.constants import MIGRATION_ENV
 
 app = create_app(env=MIGRATION_ENV)
 
