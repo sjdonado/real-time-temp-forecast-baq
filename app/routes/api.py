@@ -7,6 +7,6 @@ api_bp = Blueprint('api_bp', __name__)
 
 @api_bp.route('/fetch')
 def index():
-  task_in_process = run()
+  sent = run()
   
-  return jsonify({ 'status': 'sent' if task_in_process == False else 'already in process' })
+  return jsonify({ 'status': 'sent' if sent else 'already in process' })

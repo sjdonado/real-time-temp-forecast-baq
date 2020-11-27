@@ -1,7 +1,7 @@
 import os
 import re
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from urllib.request import urlopen
 from bs4 import BeautifulSoup
@@ -83,9 +83,7 @@ def job():
         
     print('[job]: metars parsed')
 
-    last_data_df = pd.DataFrame(last_data_df,columns=['date', 'air']).head(5)
-
-    print('last_data_df', last_data_df.shape)
+    last_data_df = pd.DataFrame(last_data_df,columns=['date', 'air']).tail(5)
 
     # Evaluate
     last_data_df['date'] = pd.to_datetime(last_data_df.date)
@@ -112,30 +110,31 @@ def job():
     y_score = scaler.inverse_transform(y_score)
 
     report = db.session.query(Report).filter(Report.active == True)
-
-    print('prediction', y_score)
-
-    model.save((f"{BASE_DIR}/data/model.h5"))
     last_data_df.to_csv(report[0].path, index=False)
 
-    report.update({ "active": False, "prediction": y_score[0][0] })
+    report.update({"active": False, "prediction": y_score[0][0]})
     db.session.commit()
+
+    last_reports = db.session.query(Report).filter(Report.active == False).count()
+
+    if (last_reports % 5 == 0):
+        model.save((f"{BASE_DIR}/data/model.h5"))
 
     print('[job]: data saved')
 
 
 def run():
-    path = f"{BASE_DIR}/blob/{datetime.utcnow().strftime('%Y%m%d%H')}.csv"
-    active_reports = db.session.query(Report).filter((Report.active == True) | (Report.path == path)).count()
+    one_hour_ago = datetime.now() - timedelta(hours=1)
+    active_reports = db.session.query(Report).filter((Report.active == True) | (Report.created >= one_hour_ago)).count()
     if active_reports > 0:
-        return True
+        return False
 
     report = Report()
-    report.path = path
+    report.path = f"{BASE_DIR}/blob/{datetime.utcnow().strftime('%Y%m%d%H')}.csv"
     db.session.add(report)
     db.session.commit()
 
     Thread(target=job, daemon=True).start()
 
-    return False
+    return True
     
