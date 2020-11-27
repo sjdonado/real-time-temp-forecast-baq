@@ -117,7 +117,7 @@ def job():
 
     last_reports = db.session.query(Report).filter(Report.active == False).count()
 
-    if (last_reports % 5 == 0):
+    if last_reports % 5 == 0:
         model.save((f"{BASE_DIR}/data/model.h5"))
 
     print('[job]: data saved')
