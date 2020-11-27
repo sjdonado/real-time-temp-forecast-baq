@@ -84,6 +84,7 @@ def create_dashboard(server):
         if data is not None:
             data['date'] = pd.to_datetime(data.date)
             data = data.sort_values(by='date')
+            data = data.drop_duplicates()
 
             data['date'] = data['date'] - datetime.timedelta(hours=5)
             data['air'] = data['air'] - 273.15

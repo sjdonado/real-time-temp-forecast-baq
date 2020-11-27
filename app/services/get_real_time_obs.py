@@ -118,20 +118,18 @@ def job():
     report = db.session.query(Report).filter(Report.active == True)
     last_reports = db.session.query(Report).filter(Report.active == False).count()
 
-    url = None
+    filename = f"{datetime.utcnow().strftime('%Y%m%d%H')}.csv"
+    path = f"{TMP_DIR}/{filename}"
+
+    last_data_df.to_csv(path, index=False)
+    url = upload_file('reports', filename, path)
+
     if last_reports % 5 == 0:
-        filename = f"{datetime.utcnow().strftime('%Y%m%d%H')}.csv"
-        path = f"{TMP_DIR}/{filename}"
-
-        last_data_df.to_csv(path, index=False)
-        url = upload_file('reports', filename, path)
-
         filename = 'model.h5'
         path = f"{TMP_DIR}/{filename}"
 
         model.save(path)
         upload_file('data', filename, path)
-
 
     report.update({"active": False, "forecast": float(y_score[0][0]), "url": url})
     db.session.commit()
