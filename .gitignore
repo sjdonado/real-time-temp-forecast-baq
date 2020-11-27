@@ -3,3 +3,4 @@ __pycache__
 *.nc
 pythonenv3.8
 app/blob/*
+*.db
