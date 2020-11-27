@@ -138,8 +138,8 @@ def job():
 
 
 def run():
-    one_hour_ago = datetime.now() - timedelta(hours=1)
-    active_report = db.session.query(Report).filter((Report.active == True) | (Report.created >= one_hour_ago)).first()
+    delay = datetime.now() - timedelta(minutes=45)
+    active_report = db.session.query(Report).filter((Report.active == True) | (Report.created > delay)).first()
     if active_report is not None:
         return 'skipped', active_report
 
