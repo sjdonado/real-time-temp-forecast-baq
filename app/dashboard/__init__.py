@@ -11,16 +11,19 @@ from plotly.subplots import make_subplots
 import pandas as pd
 
 from app.database import db, Report
+from app.services.s3 import get_file
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
-BASE_DIR = f"{os.path.abspath(os.getcwd())}/app"
 
 def create_dashboard(server):
+    title = 'Real-time temperature forecast'
+
     dash_app = dash.Dash(
         server=server,
         routes_pathname_prefix='/dashboard/',
-        external_stylesheets=external_stylesheets
+        external_stylesheets=external_stylesheets,
+        title=title
     )
 
     dash_app.layout = html.Div([
@@ -29,16 +32,16 @@ def create_dashboard(server):
     ], id='body')
 
     def build_index_page():
-        query = db.session.query(Report).filter((Report.active == False) & (Report.path != None)).order_by(Report.id.desc())
+        query = db.session.query(Report).filter((Report.active == False) & (Report.url != None)).order_by(Report.id.desc())
 
         children = [
-            html.H1(children='Real-time temperature forecast'),
+            html.H1(children=title),
         ]
 
         last_report = query.first()
 
         if last_report is not None:
-            df = pd.read_csv(last_report.path)
+            df = pd.read_csv(last_report.url)
 
             df['air'] = df['air'] - 273.15
             df['date'] = pd.to_datetime(df.date) - datetime.timedelta(hours=5)
@@ -46,12 +49,16 @@ def create_dashboard(server):
             last_date = df.iloc[-1].values[0]
 
             df_trace_1 = df.append({'date': last_date + datetime.timedelta(hours=1), 'air': None}, ignore_index=True)
-            trace_1 = {'x': df_trace_1['date'], 'y': df_trace_1['air'], 'type':'line', 'xaxis': 'x2', 'yaxis': 'y2', 'name': 'Las data fetched'}
+            trace_1 = {'x': df_trace_1['date'], 'y': df_trace_1['air'], 'type':'line', 'xaxis': 'x2', 'yaxis': 'y2', 'name': 'Last reports'}
 
-            df_trace_2 = df.append({'date': last_date + datetime.timedelta(hours=1), 'air': last_report.prediction - 273.15}, ignore_index=True)
-            trace_2 = {'x': df_trace_2['date'], 'y': df_trace_2['air'], 'type':'line', 'xaxis': 'x2', 'yaxis': 'y2', 'name': 'Prediction'}
+            df_trace_2 = df.append({'date': last_date + datetime.timedelta(hours=1), 'air': last_report.forecast - 273.15}, ignore_index=True)
+            trace_2 = {'x': df_trace_2['date'], 'y': df_trace_2['air'], 'type':'line', 'xaxis': 'x2', 'yaxis': 'y2', 'name': 'Forecast'}
 
-            children.append(html.P(children=f"Last report: {last_report.created - datetime.timedelta(hours=5)}"))
+            children.append(html.P(children=f"Last updated: {last_report.created - datetime.timedelta(hours=5)}"))
+
+            children.append(html.Div(style={'display': 'flex', 'justify-content': 'center', 'margin-top': '24px'},
+                children=html.A(children=f"Download last report", href=last_report.url, download=True)))
+
             children.append(dcc.Graph(
                 id='subplot',
                 figure = {
@@ -68,7 +75,7 @@ def create_dashboard(server):
 
         data = None
         for report in last_reports:
-            report_df = pd.read_csv(report.path)
+            report_df = pd.read_csv(report.url)
             if data is None:
                 data = report_df
             else:
@@ -77,13 +84,18 @@ def create_dashboard(server):
         if data is not None:
             data['air'] = data['air'] - 273.15
 
-            fig = px.line(data, x='date', y='air', title='Last data fetched')
+            fig = px.line(data, x='date', y='air', title='Last report')
             children.append(dcc.Graph(
-                id='last_fetched',
+                id='last-report',
                 figure = fig
             ))
 
-        train_data = pd.read_csv(f"{BASE_DIR}/data/train_data.csv")
+        train_data_url = get_file('data/train_data.csv')
+        
+        children.append(html.Div(style={'display': 'flex', 'justify-content': 'center', 'margin-top': '24px'},
+            children=html.A(children=f"Download train data", href=train_data_url, download=True)))
+
+        train_data = pd.read_csv(train_data_url)
         train_data['air'] = train_data['air'] - 273.15
 
         fig = px.line(train_data, x='date', y='air', title='Train data')

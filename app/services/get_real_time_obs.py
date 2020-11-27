@@ -15,13 +15,18 @@ from metar import Metar
 import keras
 import joblib
 from sklearn.preprocessing import MinMaxScaler
+from keras.utils import data_utils
 
 from app.database import db, Report
+from app.services.s3 import get_file, upload_file
 
-BASE_DIR = f"{os.path.abspath(os.getcwd())}/app"
+model_file = data_utils.get_file('model.h5', get_file('data/model.h5'))
+model = keras.models.load_model(model_file)
 
-model = keras.models.load_model(f"{BASE_DIR}/data/model.h5")
-scaler = joblib.load(f"{BASE_DIR}/data/scaler.save")
+scaler_file = data_utils.get_file('scaler.save', get_file('data/scaler.save'))
+scaler = joblib.load(scaler_file)
+
+TMP_DIR = f"{os.path.abspath(os.getcwd())}/tmp"
 
 # Fetch Observations
 
@@ -106,20 +111,29 @@ def job():
 
     X_last_data = np.reshape(test_data[1:5], (1, time_steps, 1))
 
-    # Prediction
+    # Forecast
     y_score = model.predict(X_last_data)
     y_score = scaler.inverse_transform(y_score)
 
     report = db.session.query(Report).filter(Report.active == True)
     last_reports = db.session.query(Report).filter(Report.active == False).count()
 
-    path = None
+    url = None
     if last_reports % 5 == 0:
-        path = f"{BASE_DIR}/blob/{datetime.utcnow().strftime('%Y%m%d%H')}.csv"
-        last_data_df.to_csv(path, index=False)
-        model.save((f"{BASE_DIR}/data/model.h5"))
+        filename = f"{datetime.utcnow().strftime('%Y%m%d%H')}.csv"
+        path = f"{TMP_DIR}/{filename}"
 
-    report.update({"active": False, "prediction": y_score[0][0], "path": path})
+        last_data_df.to_csv(path, index=False)
+        url = upload_file('reports', filename, path)
+
+        filename = 'model.h5'
+        path = f"{TMP_DIR}/{filename}"
+
+        model.save(path)
+        upload_file('data', filename, path)
+
+
+    report.update({"active": False, "forecast": float(y_score[0][0]), "url": url})
     db.session.commit()
 
     print('[job]: data saved')
