@@ -41,7 +41,9 @@ def create_dashboard(server):
             df = pd.read_csv(last_report.path)
 
             df['air'] = df['air'] - 273.15
-            last_date = datetime.datetime.strptime(df.iloc[-1].values[0], '%Y-%m-%d %H:%M:%S')
+            df['date'] = pd.to_datetime(df.date) - datetime.timedelta(hours=5)
+
+            last_date = df.iloc[-1].values[0]
 
             df_trace_1 = df.append({'date': last_date + datetime.timedelta(hours=1), 'air': None}, ignore_index=True)
             trace_1 = {'x': df_trace_1['date'], 'y': df_trace_1['air'], 'type':'line', 'xaxis': 'x2', 'yaxis': 'y2', 'name': 'Las data fetched'}
@@ -49,7 +51,7 @@ def create_dashboard(server):
             df_trace_2 = df.append({'date': last_date + datetime.timedelta(hours=1), 'air': last_report.prediction - 273.15}, ignore_index=True)
             trace_2 = {'x': df_trace_2['date'], 'y': df_trace_2['air'], 'type':'line', 'xaxis': 'x2', 'yaxis': 'y2', 'name': 'Prediction'}
 
-            children.append(html.P(children=f"Last report: {last_report.created}"))
+            children.append(html.P(children=f"Last report: {last_report.created - datetime.timedelta(hours=5)}"))
             children.append(dcc.Graph(
                 id='subplot',
                 figure = {
@@ -74,12 +76,21 @@ def create_dashboard(server):
 
         if data is not None:
             data['air'] = data['air'] - 273.15
-            fig = px.line(data, x='date', y='air', title='Last data fetched')
 
+            fig = px.line(data, x='date', y='air', title='Last data fetched')
             children.append(dcc.Graph(
-                id='historical',
+                id='last_fetched',
                 figure = fig
             ))
+
+        train_data = pd.read_csv(f"{BASE_DIR}/data/train_data.csv")
+        train_data['air'] = train_data['air'] - 273.15
+
+        fig = px.line(train_data, x='date', y='air', title='Train data')
+        children.append(dcc.Graph(
+            id='train_data',
+            figure = fig
+        ))
 
         return children
 
