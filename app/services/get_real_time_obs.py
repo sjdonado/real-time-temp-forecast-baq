@@ -106,6 +106,7 @@ def job():
 
     X_last_data = np.reshape(test_data[1:5], (1, time_steps, 1))
 
+    # Prediction
     y_score = model.predict(X_last_data)
     y_score = scaler.inverse_transform(y_score)
 
