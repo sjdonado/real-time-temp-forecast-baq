@@ -2,3 +2,4 @@ __pycache__
 .env
 *.nc
 pythonenv3.8
+app/blob/*
