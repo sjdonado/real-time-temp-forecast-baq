@@ -32,13 +32,11 @@ def create_dashboard(server):
     ], id='body')
 
     def build_index_page():
-        query = db.session.query(Report).filter((Report.active == False) & (Report.url != None)).order_by(Report.id.desc())
-
         children = [
             html.H1(children=title),
         ]
 
-        last_report = query.first()
+        last_report = db.session.query(Report).filter((Report.active == False) & (Report.url != None)).order_by(Report.id.desc()).first()
 
         if last_report is not None:
             df = pd.read_csv(last_report.url)
@@ -71,29 +69,49 @@ def create_dashboard(server):
                 })
             )
 
-        last_reports = query.all()
+        last_reports = db.session.query(Report).filter((Report.active == False) & (Report.url != None)).order_by(Report.id.desc()).all()
 
         data = None
+        forecasts = []
         for report in last_reports:
             report_df = pd.read_csv(report.url)
+            forecasts.append([report.created, report.forecast])
             if data is None:
                 data = report_df
             else:
                 data = data.append(report_df)
 
         if data is not None:
+            forecast_df = pd.DataFrame(data=forecasts, columns=['date', 'air'])
+
+            forecast_df['data'] = pd.to_datetime(forecast_df.date)
             data['date'] = pd.to_datetime(data.date)
-            data = data.sort_values(by='date')
+
             data = data.drop_duplicates()
+
+            data = data.sort_values(by='date')
+            forecast_df = forecast_df.sort_values(by='date')
+
+            forecast_df['date'] = forecast_df['date'] - datetime.timedelta(hours=5)
+            forecast_df['air'] = forecast_df['air'] - 273.15
 
             data['date'] = data['date'] - datetime.timedelta(hours=5)
             data['air'] = data['air'] - 273.15
 
-            fig = px.line(data, x='date', y='air', title='Reports saved')
+            trace_1 = {'x': data['date'], 'y': data['air'], 'type':'line', 'xaxis': 'x2', 'yaxis': 'y2', 'name': 'Reports saved'}
+            trace_2 = {'x': forecast_df['date'], 'y': forecast_df['air'], 'type':'line', 'xaxis': 'x2', 'yaxis': 'y2', 'name': 'Forecasts'}
+
             children.append(dcc.Graph(
-                id='reports-saved',
-                figure = fig
-            ))
+                id='subplot',
+                figure = {
+                    'data': [trace_2, trace_1],
+                    'layout': {
+                        'title': 'Real reports vs Forecasts',
+                        'xaxis': {'domain': [0, 1]},
+                        'xaxis2': {'domain': [0, 1]}
+                    }
+                })
+            )
 
         train_data_url = get_file('data/train_data.csv')
         
