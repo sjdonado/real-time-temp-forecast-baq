@@ -29,13 +29,13 @@ def create_dashboard(server):
     ], id='body')
 
     def build_index_page():
-        last_report = db.session.query(Report).filter(Report.active == False).order_by(Report.id.desc()).first()
-
-        print('last_report', last_report)
+        query = db.session.query(Report).filter((Report.active == False) & (Report.path != None)).order_by(Report.id.desc())
 
         children = [
             html.H1(children='Real-time temperature forecast'),
         ]
+
+        last_report = query.first()
 
         if last_report is not None:
             df = pd.read_csv(last_report.path)
@@ -62,7 +62,7 @@ def create_dashboard(server):
                 })
             )
 
-        last_reports = db.session.query(Report).filter(Report.active == False).order_by(Report.id.desc()).all()
+        last_reports = query.all()
 
         data = None
         for report in last_reports:
@@ -74,7 +74,7 @@ def create_dashboard(server):
 
         if data is not None:
             data['air'] = data['air'] - 273.15
-            fig = px.line(data, x='date', y='air', title='Historical fetched')
+            fig = px.line(data, x='date', y='air', title='Last data fetched')
 
             children.append(dcc.Graph(
                 id='historical',

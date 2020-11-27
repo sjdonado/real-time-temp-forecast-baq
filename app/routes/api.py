@@ -7,8 +7,8 @@ api_bp = Blueprint('api_bp', __name__)
 
 @api_bp.route('/fetch')
 def fetch():
-  status = run()
-  return jsonify({ 'status': 'sent' if status else 'already in process' })
+  status, report = run()
+  return jsonify({'status': status, 'report': report})
 
 
 @api_bp.route('/')

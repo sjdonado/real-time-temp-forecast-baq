@@ -110,31 +110,31 @@ def job():
     y_score = scaler.inverse_transform(y_score)
 
     report = db.session.query(Report).filter(Report.active == True)
-    last_data_df.to_csv(report[0].path, index=False)
-
-    report.update({"active": False, "prediction": y_score[0][0]})
-    db.session.commit()
-
     last_reports = db.session.query(Report).filter(Report.active == False).count()
 
+    path = None
     if last_reports % 5 == 0:
+        path = f"{BASE_DIR}/blob/{datetime.utcnow().strftime('%Y%m%d%H')}.csv"
+        last_data_df.to_csv(path, index=False)
         model.save((f"{BASE_DIR}/data/model.h5"))
+
+    report.update({"active": False, "prediction": y_score[0][0], "path": path})
+    db.session.commit()
 
     print('[job]: data saved')
 
 
 def run():
     one_hour_ago = datetime.now() - timedelta(hours=1)
-    active_reports = db.session.query(Report).filter((Report.active == True) | (Report.created >= one_hour_ago)).count()
-    if active_reports > 0:
-        return False
+    active_report = db.session.query(Report).filter((Report.active == True) | (Report.created >= one_hour_ago)).first()
+    if active_report is not None:
+        return 'skipped', active_report
 
     report = Report()
-    report.path = f"{BASE_DIR}/blob/{datetime.utcnow().strftime('%Y%m%d%H')}.csv"
     db.session.add(report)
     db.session.commit()
 
     Thread(target=job, daemon=True).start()
 
-    return True
+    return 'sent', report
     
