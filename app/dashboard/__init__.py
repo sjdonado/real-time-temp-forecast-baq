@@ -82,11 +82,15 @@ def create_dashboard(server):
                 data = data.append(report_df)
 
         if data is not None:
+            data['date'] = pd.to_datetime(data.date)
+            data = data.sort_values(by='date')
+
+            data['date'] = data['date'] - datetime.timedelta(hours=5)
             data['air'] = data['air'] - 273.15
 
-            fig = px.line(data, x='date', y='air', title='Last report')
+            fig = px.line(data, x='date', y='air', title='Reports saved')
             children.append(dcc.Graph(
-                id='last-report',
+                id='reports-saved',
                 figure = fig
             ))
 
