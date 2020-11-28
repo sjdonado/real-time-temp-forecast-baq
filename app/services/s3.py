@@ -24,7 +24,7 @@ def get_file(key):
 
 def upload_file(folder, filename, path):
     try:
-        obj_name = f"/{folder}/{filename}"
+        obj_name = f"{folder}/{filename}"
 
         s3.upload_file(path, AWS_BUCKET_NAME, obj_name)
 

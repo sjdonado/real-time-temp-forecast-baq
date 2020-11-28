@@ -17,7 +17,7 @@ external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 
 def create_dashboard(server):
-    title = 'Real-time temperature forecast'
+    title = 'Realtime temperature forecast'
 
     dash_app = dash.Dash(
         server=server,
@@ -47,10 +47,10 @@ def create_dashboard(server):
             last_date = df.iloc[-1].values[0]
 
             df_trace_1 = df.append({'date': last_date + datetime.timedelta(hours=1), 'air': None}, ignore_index=True)
-            trace_1 = {'x': df_trace_1['date'], 'y': df_trace_1['air'], 'type':'line', 'xaxis': 'x2', 'yaxis': 'y2', 'name': 'Last reports'}
+            trace_1 = {'x': df_trace_1['date'], 'y': df_trace_1['air'], 'type':'line', 'xaxis': 'x1', 'yaxis': 'y1', 'name': 'Last reports'}
 
             df_trace_2 = df.append({'date': last_date + datetime.timedelta(hours=1), 'air': last_report.forecast - 273.15}, ignore_index=True)
-            trace_2 = {'x': df_trace_2['date'], 'y': df_trace_2['air'], 'type':'line', 'xaxis': 'x2', 'yaxis': 'y2', 'name': 'Forecast'}
+            trace_2 = {'x': df_trace_2['date'], 'y': df_trace_2['air'], 'type':'line', 'xaxis': 'x1', 'yaxis': 'y1', 'name': 'Forecast'}
 
             children.append(html.P(children=f"Last updated: {last_report.created - datetime.timedelta(hours=5)}"))
 
@@ -63,8 +63,8 @@ def create_dashboard(server):
                     'data': [trace_2, trace_1],
                     'layout': {
                         'title': 'Barranquilla, Colombia',
-                        'xaxis': {'domain': [0, 1]},
-                        'xaxis2': {'domain': [0, 1]}
+                        'xaxis': {'domain': [0, 1], 'title': 'Hours'},
+                        'yaxis': {'domain': [0, 1], 'title': 'Celsius'}
                     }
                 })
             )
@@ -98,8 +98,8 @@ def create_dashboard(server):
             data['date'] = data['date'] - datetime.timedelta(hours=5)
             data['air'] = data['air'] - 273.15
 
-            trace_1 = {'x': data['date'], 'y': data['air'], 'type':'line', 'xaxis': 'x2', 'yaxis': 'y2', 'name': 'Reports saved'}
-            trace_2 = {'x': forecast_df['date'], 'y': forecast_df['air'], 'type':'line', 'xaxis': 'x2', 'yaxis': 'y2', 'name': 'Forecasts'}
+            trace_1 = {'x': data['date'], 'y': data['air'], 'type':'line', 'xaxis': 'x1', 'yaxis': 'y1', 'name': 'Reports saved'}
+            trace_2 = {'x': forecast_df['date'], 'y': forecast_df['air'], 'type':'line', 'xaxis': 'x1', 'yaxis': 'y1', 'name': 'Forecasts'}
 
             children.append(dcc.Graph(
                 id='subplot',
@@ -107,24 +107,24 @@ def create_dashboard(server):
                     'data': [trace_2, trace_1],
                     'layout': {
                         'title': 'Real reports vs Forecasts',
-                        'xaxis': {'domain': [0, 1]},
-                        'xaxis2': {'domain': [0, 1]}
-                    }
+                        'xaxis': {'domain': [0, 1], 'title': 'Hours'},
+                        'yaxis': {'domain': [0, 1], 'title': 'Celsius'}
+                    },
                 })
             )
 
-        train_data_url = get_file('data/train_data.csv')
+        training_data_url = get_file('data/train_data.csv')
         
         children.append(html.Div(style={'display': 'flex', 'justify-content': 'center', 'margin-top': '24px'},
-            children=html.A(children=f"Download train data", href=train_data_url, download=True)))
+            children=html.A(children=f"Download training data", href=training_data_url, download=True)))
 
-        train_data = pd.read_csv(train_data_url)
-        train_data['air'] = train_data['air'] - 273.15
+        training_data = pd.read_csv(training_data_url)
+        training_data['air'] = training_data['air'] - 273.15
 
-        fig = px.line(train_data, x='date', y='air', title='Train data')
+        fig = px.line(training_data, x='date', y='air', title='Training data')
         children.append(dcc.Graph(
-            id='train_data',
-            figure = fig
+            id='training-data',
+            figure = fig,
         ))
 
         return children
