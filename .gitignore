@@ -5,3 +5,4 @@ pythonenv3.8
 app/blob/*
 tmp/*.csv
 tmp/*.h5
+cache-directory

@@ -13,13 +13,16 @@ s3 = boto3.client(
 )
 
 def get_file(key):
-    if (s3.head_object(Bucket=AWS_BUCKET_NAME, Key=key)):
-        url = s3.generate_presigned_url('get_object',
-                                    Params={'Bucket': AWS_BUCKET_NAME,
-                                            'Key': key},
-                                    ExpiresIn=86400)
-        return url
-
+    try:
+        if (s3.head_object(Bucket=AWS_BUCKET_NAME, Key=key)):
+            url = s3.generate_presigned_url('get_object',
+                                        Params={'Bucket': AWS_BUCKET_NAME,
+                                                'Key': key},
+                                        ExpiresIn=86400)
+            return url
+        return None
+    except Exception as e:
+        print(e)
     return None
 
 def upload_file(folder, filename, path):
@@ -28,7 +31,7 @@ def upload_file(folder, filename, path):
 
         s3.upload_file(path, AWS_BUCKET_NAME, obj_name)
 
-        return get_file(obj_name)
+        return obj_name
     except Exception as e:
         print(e)
     return None
