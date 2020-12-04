@@ -3,6 +3,9 @@
     <img src="forecast.png" alt="Forecast results" width="800px" />
 </div>
 
+## NOAA dataset
+https://psl.noaa.gov/cgi-bin/db_search/DBSearch.pl?&Dataset=NCEP/DOE+AMIP-II+Reanalysis+(Reanalysis-2)+Daily+Averages&Variable=Air+Temperature
+
 ## Setup
 1. create virtualenv `python3 -m venv pythonenv3.8`
 2. activate virtualenv `source pythonenv3.8/bin/activate .`
