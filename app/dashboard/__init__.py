@@ -59,9 +59,9 @@ def create_dashboard(server):
         ]
 
         last_report = db.session.query(Report).filter((Report.active == False) & (Report.url != None)).order_by(Report.id.desc()).first()
-        last_report_url = get_file(last_report.url)
 
         if last_report is not None:
+            last_report_url = get_file(last_report.url)
             df = pd.read_csv(last_report_url)
 
             df['air'] = df['air'] - 273.15

@@ -43,9 +43,9 @@ def fetch(url):
         return None
 
 
-def get_last_cortissoz_metars(hour):
+def get_last_cortissoz_metars(date):
     now = datetime.utcnow()
-    url = f"https://www.ogimet.com/display_metars2.php?lang=en&lugar=SKBQ&tipo=SA&ord=DIR&nil=NO&fmt=txt&ano={now.year}&mes={now.month}&day={now.day}&hora={hour-4}&min=00&anof={now.year}&mesf={now.month}&dayf={now.day}&horaf={now.hour}&minf=59"
+    url = f"https://www.ogimet.com/display_metars2.php?lang=en&lugar=SKBQ&tipo=SA&ord=DIR&nil=NO&fmt=txt&ano={date.year}&mes={date.month}&day={date.day}&hora={date.hour-5}&min=00&anof={now.year}&mesf={now.month}&dayf={now.day}&horaf={now.hour}&minf=59"
     soup = fetch(url)
     if soup is None:
         return []
@@ -59,7 +59,6 @@ def get_last_cortissoz_metars(hour):
         if ',' not in match:
             data.append(match)
     return data
-
 
 # Parse data from METAR
 def get_temperature(obs):
@@ -76,7 +75,8 @@ def parse_metars(metars):
             temp = get_temperature(obs)
             df.append([datetime.strptime(metar[0], '%Y%m%d%H%M'), temp])
         except Exception as e:
-            print('error:', e)
+            error = e
+            # print('error:', e)
 
     df = pd.DataFrame(df,columns=['date', 'air'])
     df['date'] = df['date'].apply(lambda x: x.replace(minute=0, second=0))
@@ -98,22 +98,27 @@ def create_dataset(dataset, time_steps):
 
 def job():
     now = datetime.utcnow()
-    metars = get_last_cortissoz_metars(now.hour)
+    metars = get_last_cortissoz_metars(now)
     last_data_df = parse_metars(metars)
-    print('[job]: last metars fetched')
+    print('[job]: last metars fetched', last_data_df.shape)
 
     boundary = (datetime.today() - timedelta(hours=5))
 
     # Fix unreported observations using the model
+    now = datetime.utcnow()
+    metars = get_last_cortissoz_metars(now)
+    last_data_df = parse_metars(metars)
+
+    boundary = (datetime.today() - timedelta(hours=4))
+
     while True:
         for idx, row in last_data_df.iterrows():
-            expected = datetime(row.date.year, row.date.month, row.date.day, (boundary + timedelta(hours=idx)).hour)
+            expected = boundary + timedelta(hours=idx)
             if row.date.hour != expected.hour:
-                # print('for: ', idx, row.date, row.date.hour, expected.hour)
                 if idx < 4:
-                    metars = get_last_cortissoz_metars(expected.hour)
-                    boundary -= timedelta(hours=5)
+                    metars = get_last_cortissoz_metars(expected)
                     last_data_df = parse_metars(metars)
+                    boundary -= timedelta(hours=5)
                 else:
                     data = last_data_df[idx-4:idx]['air'].values.reshape(-1,1)
                     data = scaler.transform(data)
@@ -127,12 +132,9 @@ def job():
         if idx == last_data_df.shape[0] - 1:
             break
 
-    print('[job]: data fixed')
+    print('[job]: data fixed', last_data_df.shape)
 
-    last_data_df = pd.DataFrame(last_data_df,columns=['date', 'air']).tail(5)
-
-    last_data_df['date'] = pd.to_datetime(last_data_df.date)
-    last_data_df = last_data_df.sort_values(by='date')
+    last_data_df = last_data_df.tail(5)
 
     # Normalization
     test_data = last_data_df['air'].values.reshape(-1,1)
