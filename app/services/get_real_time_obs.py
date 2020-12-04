@@ -1,6 +1,8 @@
 import os
 import re
 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+
 from datetime import date, datetime, timedelta
 
 from urllib.request import urlopen
@@ -41,9 +43,9 @@ def fetch(url):
         return None
 
 
-def get_last_cortissoz_metars():
+def get_last_cortissoz_metars(hour):
     now = datetime.utcnow()
-    url = f"https://www.ogimet.com/display_metars2.php?lang=en&lugar=SKBQ&tipo=SA&ord=DIR&nil=NO&fmt=txt&ano={now.year}&mes={now.month}&day={now.day}&hora={now.hour-10}&min=00&anof={now.year}&mesf={now.month}&dayf={now.day}&horaf={now.hour}&minf=59"
+    url = f"https://www.ogimet.com/display_metars2.php?lang=en&lugar=SKBQ&tipo=SA&ord=DIR&nil=NO&fmt=txt&ano={now.year}&mes={now.month}&day={now.day}&hora={hour-4}&min=00&anof={now.year}&mesf={now.month}&dayf={now.day}&horaf={now.hour}&minf=59"
     soup = fetch(url)
     if soup is None:
         return []
@@ -58,10 +60,31 @@ def get_last_cortissoz_metars():
             data.append(match)
     return data
 
+
 # Parse data from METAR
 def get_temperature(obs):
     """ returns temp K """
     return float(re.findall(r".*temperature:\s(.*)[\s]C\s*", obs)[0]) + 273.15
+
+
+def parse_metars(metars):
+    df = []
+    for metar in metars:
+        try:
+            temp = 0.0
+            obs = Metar.Metar(metar[1]).string()
+            temp = get_temperature(obs)
+            df.append([datetime.strptime(metar[0], '%Y%m%d%H%M'), temp])
+        except Exception as e:
+            print('error:', e)
+
+    df = pd.DataFrame(df,columns=['date', 'air'])
+    df['date'] = df['date'].apply(lambda x: x.replace(minute=0, second=0))
+    df = df.drop_duplicates(subset='date')
+    df = df.reset_index(drop=True)
+    df = df.sort_values(by='date')
+    return df
+
 
 # Model helpers
 def create_dataset(dataset, time_steps):
@@ -72,29 +95,42 @@ def create_dataset(dataset, time_steps):
         Y.append(dataset[i + time_steps, 0])
     return np.array(X), np.array(Y)
 
+
 def job():
-    metars = get_last_cortissoz_metars()
+    now = datetime.utcnow()
+    metars = get_last_cortissoz_metars(now.hour)
+    last_data_df = parse_metars(metars)
     print('[job]: last metars fetched')
 
-    last_data_df = []
-    for metar in metars:
-        try:
-            temp = 0.0
-            obs = Metar.Metar(metar[1]).string()
-            temp = get_temperature(obs)
-            last_data_df.append([datetime.strptime(metar[0], '%Y%m%d%H%M'), temp])
-        except Exception as e:
-            print('error:', e)
-        
-    print('[job]: metars parsed')
+    boundary = (datetime.today() - timedelta(hours=5))
+
+    # Fix unreported observations using the model
+    while True:
+        for idx, row in last_data_df.iterrows():
+            expected = datetime(row.date.year, row.date.month, row.date.day, (boundary + timedelta(hours=idx)).hour)
+            if row.date.hour != expected.hour:
+                # print('for: ', idx, row.date, row.date.hour, expected.hour)
+                if idx < 4:
+                    metars = get_last_cortissoz_metars(expected.hour)
+                    boundary -= timedelta(hours=5)
+                    last_data_df = parse_metars(metars)
+                else:
+                    data = last_data_df[idx-4:idx]['air'].values.reshape(-1,1)
+                    data = scaler.transform(data)
+                    y_score = model.predict(np.reshape(data, (1, 4, 1)))
+                    y_score = scaler.inverse_transform(y_score)
+                    last_data_df = last_data_df.append({'date': expected, 'air': y_score[0][0] }, ignore_index=True)
+                    last_data_df = last_data_df.sort_values(by='date')
+                    last_data_df = last_data_df.reset_index(drop=True)
+                break
+
+        if idx == last_data_df.shape[0] - 1:
+            break
+
+    print('[job]: data fixed')
 
     last_data_df = pd.DataFrame(last_data_df,columns=['date', 'air']).tail(5)
 
-    # Evaluate
-    last_data_df['date'] = pd.to_datetime(last_data_df.date)
-    last_data_df = last_data_df.sort_values(by='date')
-
-    # Sort by date
     last_data_df['date'] = pd.to_datetime(last_data_df.date)
     last_data_df = last_data_df.sort_values(by='date')
 
@@ -109,9 +145,8 @@ def job():
     X_test = np.reshape(X_test, (X_test.shape[0], time_steps, 1))
     model.fit(X_test, y_test, batch_size=4)
 
-    X_last_data = np.reshape(test_data[1:5], (1, time_steps, 1))
-
     # Forecast
+    X_last_data = np.reshape(test_data[1:5], (1, time_steps, 1))
     y_score = model.predict(X_last_data)
     y_score = scaler.inverse_transform(y_score)
 

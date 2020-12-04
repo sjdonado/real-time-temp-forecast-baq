@@ -1,0 +1,6 @@
+{
+	"name": "Docker Python",
+	"workspaceFolder": "/usr/src/app",
+	"dockerFile": "../Dockerfile.dev",
+	"context": ".."
+}
