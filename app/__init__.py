@@ -1,5 +1,6 @@
 from flask import Flask
 from flask_migrate import Migrate
+from flask_seeder import FlaskSeeder
 
 from config import Config
 from .database import db
@@ -13,6 +14,9 @@ def create_app(env=None):
     db.init_app(app)
     db.app = app
     migrate = Migrate(app, db)
+
+    seeder = FlaskSeeder()
+    seeder.init_app(app, db)
 
     if env == MIGRATION_ENV:
         return app

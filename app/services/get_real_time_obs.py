@@ -19,14 +19,11 @@ import joblib
 from sklearn.preprocessing import MinMaxScaler
 from keras.utils import data_utils
 
-from app.database import db, Report
+from app.database import db, Report, ModelData
 from app.services.s3 import get_file, upload_file
 
-model_file = data_utils.get_file('model.h5', get_file('data/model.h5'))
-model = keras.models.load_model(model_file)
-
-scaler_file = data_utils.get_file('scaler.save', get_file('data/scaler.save'))
-scaler = joblib.load(scaler_file)
+model = None
+scaler = None
 
 TMP_DIR = f"{os.path.abspath(os.getcwd())}/tmp"
 
@@ -97,84 +94,101 @@ def create_dataset(dataset, time_steps):
 
 
 def job():
-    now = datetime.utcnow()
-    metars = get_last_cortissoz_metars(now)
-    last_data_df = parse_metars(metars)
-    print('[job]: last metars fetched', last_data_df.shape)
+    try:
+        now = datetime.utcnow()
+        metars = get_last_cortissoz_metars(now)
+        last_data_df = parse_metars(metars)
+        print('[job]: last metars fetched', last_data_df.shape)
 
-    boundary = (datetime.today() - timedelta(hours=5))
+        boundary = (datetime.today() - timedelta(hours=5))
 
-    # Fix unreported observations using the model
-    now = datetime.utcnow()
-    metars = get_last_cortissoz_metars(now)
-    last_data_df = parse_metars(metars)
+        # Fix unreported observations using the model
+        now = datetime.utcnow()
+        metars = get_last_cortissoz_metars(now)
+        last_data_df = parse_metars(metars)
 
-    boundary = (datetime.today() - timedelta(hours=4))
+        boundary = (datetime.today() - timedelta(hours=4))
 
-    while True:
-        for idx, row in last_data_df.iterrows():
-            expected = boundary + timedelta(hours=idx)
-            if row.date.hour != expected.hour:
-                if idx < 4:
-                    metars = get_last_cortissoz_metars(expected)
-                    last_data_df = parse_metars(metars)
-                    boundary -= timedelta(hours=5)
-                else:
-                    data = last_data_df[idx-4:idx]['air'].values.reshape(-1,1)
-                    data = scaler.transform(data)
-                    y_score = model.predict(np.reshape(data, (1, 4, 1)))
-                    y_score = scaler.inverse_transform(y_score)
-                    last_data_df = last_data_df.append({'date': expected, 'air': y_score[0][0] }, ignore_index=True)
-                    last_data_df = last_data_df.sort_values(by='date')
-                    last_data_df = last_data_df.reset_index(drop=True)
+        while True:
+            for idx, row in last_data_df.iterrows():
+                expected = boundary + timedelta(hours=idx)
+                if row.date.hour != expected.hour:
+                    if idx < 4:
+                        metars = get_last_cortissoz_metars(expected)
+                        last_data_df = parse_metars(metars)
+                        boundary -= timedelta(hours=5)
+                    else:
+                        data = last_data_df[idx-4:idx]['air'].values.reshape(-1,1)
+                        data = scaler.transform(data)
+                        y_score = model.predict(np.reshape(data, (1, 4, 1)))
+                        y_score = scaler.inverse_transform(y_score)
+                        last_data_df = last_data_df.append({'date': expected, 'air': y_score[0][0] }, ignore_index=True)
+                        last_data_df = last_data_df.sort_values(by='date')
+                        last_data_df = last_data_df.reset_index(drop=True)
+                    break
+
+            if idx == last_data_df.shape[0] - 1:
                 break
 
-        if idx == last_data_df.shape[0] - 1:
-            break
+        print('[job]: data fixed', last_data_df.shape)
 
-    print('[job]: data fixed', last_data_df.shape)
+        last_data_df = last_data_df.tail(5)
 
-    last_data_df = last_data_df.tail(5)
+        # Normalization
+        test_data = last_data_df['air'].values.reshape(-1,1)
+        test_data = scaler.transform(test_data)
 
-    # Normalization
-    test_data = last_data_df['air'].values.reshape(-1,1)
-    test_data = scaler.transform(test_data)
+        # Fit last observation
+        time_steps = 4
+        X_test, y_test = create_dataset(test_data, time_steps)
 
-    # Fit last observation
-    time_steps = 4
-    X_test, y_test = create_dataset(test_data, time_steps)
+        X_test = np.reshape(X_test, (X_test.shape[0], time_steps, 1))
+        model.fit(X_test, y_test, batch_size=4)
 
-    X_test = np.reshape(X_test, (X_test.shape[0], time_steps, 1))
-    model.fit(X_test, y_test, batch_size=4)
+        # Forecast
+        X_last_data = np.reshape(test_data[1:5], (1, time_steps, 1))
+        y_score = model.predict(X_last_data)
+        y_score = scaler.inverse_transform(y_score)
 
-    # Forecast
-    X_last_data = np.reshape(test_data[1:5], (1, time_steps, 1))
-    y_score = model.predict(X_last_data)
-    y_score = scaler.inverse_transform(y_score)
+        report = db.session.query(Report).filter(Report.active == True)
+        last_reports = db.session.query(Report).filter(Report.active == False).count()
 
-    report = db.session.query(Report).filter(Report.active == True)
-    last_reports = db.session.query(Report).filter(Report.active == False).count()
+        filename = f"{datetime.utcnow().strftime('%Y%m%d%H')}.csv"
+        tmp_path = f"{TMP_DIR}/{filename}"
 
-    filename = f"{datetime.utcnow().strftime('%Y%m%d%H')}.csv"
-    path = f"{TMP_DIR}/{filename}"
+        last_data_df.to_csv(tmp_path, index=False)
+        path = upload_file('reports', filename, tmp_path)
 
-    last_data_df.to_csv(path, index=False)
-    url = upload_file('reports', filename, path)
+        if last_reports > 0 and last_reports % 5 == 0:
+            filename = 'model.h5'
+            tmp_path = f"{TMP_DIR}/{filename}"
 
-    if last_reports % 5 == 0:
-        filename = 'model.h5'
-        path = f"{TMP_DIR}/{filename}"
+            model.save(path)
+            upload_file('data', filename, tmp_path)
 
-        model.save(path)
-        upload_file('data', filename, path)
+        forecast = float(y_score[0][0])
 
-    report.update({"active": False, "forecast": float(y_score[0][0]), "url": url})
-    db.session.commit()
+        report.update({"active": False, "forecast": forecast, "path": path})
+        db.session.commit()
 
-    print('[job]: data saved')
+        print('[job]: data saved', forecast, path)
+    except Exception as e:
+        print(e)
 
 
 def run():
+    global model
+    global scaler
+
+    if model is None or scaler is None:
+        keras_model_db = db.session.query(ModelData).filter(ModelData.path == 'data/model.h5').first()
+        model_file = data_utils.get_file('model.h5', get_file(keras_model_db))
+        model = keras.models.load_model(model_file)
+
+        scaler__db = db.session.query(ModelData).filter(ModelData.path == 'data/scaler.save').first()
+        scaler_file = data_utils.get_file('scaler.save', get_file(scaler__db))
+        scaler = joblib.load(scaler_file)
+
     delay = datetime.now() - timedelta(minutes=55)
     active_report = db.session.query(Report).filter((Report.active == True) | (Report.created > delay)).first()
     if active_report is not None:

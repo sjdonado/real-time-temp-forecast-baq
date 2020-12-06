@@ -1,18 +1,16 @@
 import os
 from datetime import timedelta
-from datetime import datetime
 
 import dash
 import plotly.express as px
 import dash_core_components as dcc
 import dash_html_components as html
-from flask_caching import Cache
 
 from plotly.subplots import make_subplots
 
 import pandas as pd
 
-from app.database import db, Report
+from app.database import db, Report, ModelData
 from app.services.s3 import get_file
 
 
@@ -26,17 +24,11 @@ def create_dashboard(server):
         assets_folder='./assets'
     )
 
-    cache = Cache(server, config={'CACHE_TYPE': 'redis', 'CACHE_REDIS_URL': server.config['REDIS_URL']})
-
     dash_app.layout = html.Div([
         dcc.Location(id='url', refresh=False),
         html.Div(id='page-content')
     ], id='body')
 
-    now = datetime.now()
-    timeout = (datetime(now.year, now.month, now.day, now.hour + 1, 3) - now).seconds
-
-    @cache.memoize(timeout=timeout)
     def build_index_page():
         children = [
             html.Div(
@@ -58,10 +50,10 @@ def create_dashboard(server):
             ),
         ]
 
-        last_report = db.session.query(Report).filter((Report.active == False) & (Report.url != None)).order_by(Report.id.desc()).first()
+        last_report = db.session.query(Report).filter((Report.active == False) & (Report.path != None)).order_by(Report.id.desc()).first()
 
         if last_report is not None:
-            last_report_url = get_file(last_report.url)
+            last_report_url = get_file(last_report)
             df = pd.read_csv(last_report_url)
 
             df['air'] = df['air'] - 273.15
@@ -92,12 +84,12 @@ def create_dashboard(server):
                 })
             )
 
-        last_reports = db.session.query(Report).filter((Report.active == False) & (Report.url != None)).order_by(Report.id.desc()).all()
+        last_reports = db.session.query(Report).filter((Report.active == False) & (Report.path != None)).order_by(Report.id.desc()).all()
 
         data = None
         forecasts = []
         for report in last_reports:
-            report_df = pd.read_csv(get_file(report.url))
+            report_df = pd.read_csv(get_file(report))
             forecasts.append([report.created, report.forecast])
             if data is None:
                 data = report_df
@@ -136,7 +128,8 @@ def create_dashboard(server):
                 })
             )
 
-        training_data_url = get_file('data/train_data.csv')
+        train_data_db = db.session.query(ModelData).filter(ModelData.path == 'data/train_data.csv').first()
+        training_data_url = get_file(train_data_db)
         
         children.append(html.Div(style={'display': 'flex', 'justify-content': 'center', 'margin-top': '24px'},
             children=html.A(children=f"Download training data", href=training_data_url, download=True)))
